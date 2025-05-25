@@ -15,8 +15,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getProducts, addProduct, updateProduct, deleteProduct } from "@/lib/data"
 import { useAuth } from "@/lib/auth-context"
 import ImageUpload from "@/components/image-upload"
-import type { Product } from "@/lib/types"
+import type { Product, Category } from "@/lib/types"
 import { Plus, Edit, Trash2, Package, Users, DollarSign, TrendingUp } from "lucide-react"
+import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 export default function AdminPage() {
   const { user, isAuthenticated } = useAuth()
@@ -26,13 +28,59 @@ export default function AdminPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [newProductImage, setNewProductImage] = useState<string | null>(null)
   const [editProductImage, setEditProductImage] = useState<string | null>(null)
+  const [categories, setCategories] = useState<Category[]>([])
+  const [newProduct, setNewProduct] = useState({
+    name: '',
+    description: '',
+    price: '',
+    image_url: '',
+    category_id: '',
+    stock: '',
+    brand: '',
+    size: ''
+  })
+  const router = useRouter()
 
   useEffect(() => {
-    setProducts(getProducts())
-  }, [])
+    // Проверка прав доступа
+    if (!user) {
+      router.push('/login')
+      return
+    }
+
+    // Загрузка продуктов и категорий
+    fetchProducts()
+    fetchCategories()
+  }, [user, router])
+
+  async function fetchProducts() {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*, categories(*)')
+    
+    if (error) {
+      console.error('Error fetching products:', error)
+      return
+    }
+    
+    setProducts(data || [])
+  }
+
+  async function fetchCategories() {
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+    
+    if (error) {
+      console.error('Error fetching categories:', error)
+      return
+    }
+    
+    setCategories(data || [])
+  }
 
   // Проверка доступа администратора
-  if (!isAuthenticated || !user?.isAdmin) {
+  if (!isAuthenticated || user?.role !== 'admin') {
     return (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="text-center">
@@ -44,38 +92,52 @@ export default function AdminPage() {
     )
   }
 
-  const handleAddProduct = (e: React.FormEvent) => {
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
+    
     const formData = new FormData(e.target as HTMLFormElement)
-
-    const newProductData = {
-      name: formData.get("name") as string,
-      description: formData.get("description") as string,
-      price: Number.parseFloat(formData.get("price") as string),
-      category: formData.get("category") as "spray-paint" | "varnish" | "primer",
-      image: newProductImage || "/placeholder.svg?height=300&width=300",
-      stock: Number.parseInt(formData.get("stock") as string),
-      brand: formData.get("brand") as string,
-      size: formData.get("size") as string,
+    
+    const productData = {
+      name: formData.get('name') as string,
+      description: formData.get('description') as string,
+      price: parseFloat(formData.get('price') as string),
+      stock: parseInt(formData.get('stock') as string),
+      category_id: formData.get('category') as string,
+      image_url: newProductImage || '/placeholder.jpg'
     }
-
-    const newProduct = addProduct(newProductData)
-    setProducts(getProducts())
-    setShowAddForm(false)
+    
+    const { error } = await supabase
+      .from('products')
+      .insert([productData])
+    
+    if (error) {
+      console.error('Error adding product:', error)
+      return
+    }
+    
+    // Очистка формы и обновление списка
+    setNewProduct({
+      name: '',
+      description: '',
+      price: '',
+      image_url: '',
+      category_id: '',
+      stock: '',
+      brand: '',
+      size: ''
+    })
     setNewProductImage(null)
-
-    // Очистка формы
-    const form = e.target as HTMLFormElement
-    form.reset()
+    setShowAddForm(false)
+    fetchProducts()
   }
 
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product)
-    setEditProductImage(product.image)
+    setEditProductImage(product.image_url)
     setIsEditing(true)
   }
 
-  const handleUpdateProduct = (e: React.FormEvent) => {
+  const handleUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingProduct) return
 
@@ -85,25 +147,41 @@ export default function AdminPage() {
       name: formData.get("name") as string,
       description: formData.get("description") as string,
       price: Number.parseFloat(formData.get("price") as string),
-      category: formData.get("category") as "spray-paint" | "varnish" | "primer",
+      category_id: formData.get("category") as string,
       stock: Number.parseInt(formData.get("stock") as string),
       brand: formData.get("brand") as string,
       size: formData.get("size") as string,
-      image: editProductImage || editingProduct.image,
+      image_url: editProductImage || editingProduct.image_url,
     }
 
-    updateProduct(editingProduct.id, updates)
-    setProducts(getProducts())
+    const { error } = await supabase
+      .from('products')
+      .update(updates)
+      .eq('id', editingProduct.id)
+
+    if (error) {
+      console.error('Error updating product:', error)
+      return
+    }
+
     setIsEditing(false)
     setEditingProduct(null)
     setEditProductImage(null)
+    fetchProducts()
   }
 
-  const handleDeleteProduct = (id: string) => {
-    if (confirm("Вы уверены, что хотите удалить этот товар?")) {
-      deleteProduct(id)
-      setProducts(getProducts())
+  const handleDeleteProduct = async (id: string) => {
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id)
+    
+    if (error) {
+      console.error('Error deleting product:', error)
+      return
     }
+    
+    fetchProducts()
   }
 
   const totalProducts = products.length
@@ -130,7 +208,7 @@ export default function AdminPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Панель администратора</h1>
           <p className="text-gray-600">Управление инвентарем и заказами магазина красок</p>
         </div>
-        <div className="text-sm text-gray-600">Добро пожаловать, {user?.name}</div>
+        <div className="text-sm text-gray-600">Добро пожаловать, {user?.full_name}</div>
       </div>
 
       <Tabs defaultValue="overview" className="space-y-6">
@@ -270,44 +348,90 @@ export default function AdminPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="name">Название товара</Label>
-                        <Input id="name" name="name" required />
+                        <Input 
+                          id="name" 
+                          name="name" 
+                          value={newProduct.name}
+                          onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
+                          required 
+                        />
                       </div>
                       <div>
                         <Label htmlFor="brand">Бренд</Label>
-                        <Input id="brand" name="brand" required />
+                        <Input 
+                          id="brand" 
+                          name="brand" 
+                          value={newProduct.brand}
+                          onChange={(e) => setNewProduct({...newProduct, brand: e.target.value})}
+                          required 
+                        />
                       </div>
                     </div>
 
                     <div>
                       <Label htmlFor="description">Описание</Label>
-                      <Textarea id="description" name="description" required />
+                      <Textarea 
+                        id="description" 
+                        name="description" 
+                        value={newProduct.description}
+                        onChange={(e) => setNewProduct({...newProduct, description: e.target.value})}
+                        required 
+                      />
                     </div>
 
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <Label htmlFor="price">Цена (₽)</Label>
-                        <Input id="price" name="price" type="number" step="1" required />
+                        <Input 
+                          id="price" 
+                          name="price" 
+                          type="number" 
+                          step="1" 
+                          value={newProduct.price}
+                          onChange={(e) => setNewProduct({...newProduct, price: e.target.value})}
+                          required 
+                        />
                       </div>
                       <div>
                         <Label htmlFor="stock">Количество</Label>
-                        <Input id="stock" name="stock" type="number" required />
+                        <Input 
+                          id="stock" 
+                          name="stock" 
+                          type="number" 
+                          value={newProduct.stock}
+                          onChange={(e) => setNewProduct({...newProduct, stock: e.target.value})}
+                          required 
+                        />
                       </div>
                       <div>
                         <Label htmlFor="size">Размер</Label>
-                        <Input id="size" name="size" required />
+                        <Input 
+                          id="size" 
+                          name="size" 
+                          value={newProduct.size}
+                          onChange={(e) => setNewProduct({...newProduct, size: e.target.value})}
+                          required 
+                        />
                       </div>
                     </div>
 
                     <div>
                       <Label htmlFor="category">Категория</Label>
-                      <Select name="category" required>
+                      <Select 
+                        name="category" 
+                        value={newProduct.category_id}
+                        onValueChange={(value) => setNewProduct({...newProduct, category_id: value})}
+                        required
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Выберите категорию" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="spray-paint">Краска-спрей</SelectItem>
-                          <SelectItem value="varnish">Лак</SelectItem>
-                          <SelectItem value="primer">Грунтовка</SelectItem>
+                          {categories.map((category) => (
+                            <SelectItem key={category.id} value={category.id}>
+                              {category.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -339,7 +463,7 @@ export default function AdminPage() {
                 <CardContent>
                   <form onSubmit={handleUpdateProduct} className="space-y-6">
                     <ImageUpload
-                      currentImage={editingProduct.image}
+                      currentImage={editingProduct.image_url}
                       onImageChange={setEditProductImage}
                       label="Изображение товара"
                     />
@@ -395,14 +519,16 @@ export default function AdminPage() {
 
                     <div>
                       <Label htmlFor="edit-category">Категория</Label>
-                      <Select name="category" defaultValue={editingProduct.category} required>
+                      <Select name="category" defaultValue={editingProduct.category_id} required>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="spray-paint">Краска-спрей</SelectItem>
-                          <SelectItem value="varnish">Лак</SelectItem>
-                          <SelectItem value="primer">Грунтовка</SelectItem>
+                          {categories.map((category) => (
+                            <SelectItem key={category.id} value={category.id}>
+                              {category.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -434,7 +560,7 @@ export default function AdminPage() {
                     <div className="flex items-center space-x-4">
                       <div className="w-20 h-20 relative bg-gray-100 rounded-lg overflow-hidden">
                         <Image
-                          src={product.image || "/placeholder.svg"}
+                          src={product.image_url || "/placeholder.jpg"}
                           alt={product.name}
                           fill
                           className="object-cover"
@@ -447,7 +573,9 @@ export default function AdminPage() {
                           {product.brand} • {product.size}
                         </p>
                         <div className="flex items-center space-x-4 mt-2">
-                          <Badge className="capitalize">{getCategoryName(product.category)}</Badge>
+                          <Badge className="capitalize">
+                            {editingProduct.categories?.name || 'Без категории'}
+                          </Badge>
                           <span className="text-sm text-gray-600">{product.price}₽</span>
                           <span className="text-sm text-gray-600">{product.stock} на складе</span>
                         </div>
