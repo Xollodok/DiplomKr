@@ -54,6 +54,7 @@ export default function AdminPage() {
   }, [user, router])
 
   async function fetchProducts() {
+    console.log('Fetching products...')
     const { data, error } = await supabase
       .from('products')
       .select('*, categories(*)')
@@ -63,6 +64,7 @@ export default function AdminPage() {
       return
     }
     
+    console.log('Fetched products:', data)
     setProducts(data || [])
   }
 
@@ -95,6 +97,8 @@ export default function AdminPage() {
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    console.log('Current user:', user)
+    
     const formData = new FormData(e.target as HTMLFormElement)
     
     const productData = {
@@ -103,32 +107,65 @@ export default function AdminPage() {
       price: parseFloat(formData.get('price') as string),
       stock: parseInt(formData.get('stock') as string),
       category_id: formData.get('category') as string,
-      image_url: newProductImage || '/placeholder.jpg'
+      image_url: newProductImage || '/placeholder.jpg',
+      brand: formData.get('brand') as string,
+      size: formData.get('size') as string
     }
     
-    const { error } = await supabase
-      .from('products')
-      .insert([productData])
+    console.log('Adding product with data:', productData)
     
-    if (error) {
-      console.error('Error adding product:', error)
-      return
+    try {
+      // Проверяем роль пользователя
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user?.id)
+        .single()
+      
+      console.log('User role check:', { userData, userError })
+      
+      if (userError) {
+        console.error('Error checking user role:', userError)
+        return
+      }
+      
+      if (userData?.role !== 'admin') {
+        console.error('User is not an admin')
+        return
+      }
+      
+      const { data, error } = await supabase
+        .from('products')
+        .insert([productData])
+        .select('*, categories(*)')
+        .single()
+      
+      if (error) {
+        console.error('Error adding product:', error)
+        return
+      }
+      
+      console.log('Product added successfully:', data)
+      
+      // Обновляем список продуктов
+      setProducts(prevProducts => [...prevProducts, data])
+      
+      // Очистка формы и обновление списка
+      setNewProduct({
+        name: '',
+        description: '',
+        price: '',
+        image_url: '',
+        category_id: '',
+        stock: '',
+        brand: '',
+        size: ''
+      })
+      setNewProductImage(null)
+      setShowAddForm(false)
+    } catch (err) {
+      console.error('Unexpected error adding product:', err)
     }
-    
-    // Очистка формы и обновление списка
-    setNewProduct({
-      name: '',
-      description: '',
-      price: '',
-      image_url: '',
-      category_id: '',
-      stock: '',
-      brand: '',
-      size: ''
-    })
-    setNewProductImage(null)
-    setShowAddForm(false)
-    fetchProducts()
   }
 
   const handleEditProduct = (product: Product) => {

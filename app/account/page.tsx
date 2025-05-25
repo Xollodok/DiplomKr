@@ -13,26 +13,42 @@ import { useAuth } from "@/lib/auth-context"
 import { User, Package, Settings, LogOut } from "lucide-react"
 
 export default function AccountPage() {
-  const { isAuthenticated, login, logout, user } = useAuth()
+  const { isAuthenticated, signIn, signOut, signUp, user } = useAuth()
   const [isLogin, setIsLogin] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
+    
     const formData = new FormData(e.target as HTMLFormElement)
     const email = formData.get("email") as string
     const password = formData.get("password") as string
 
-    if (login(email, password)) {
-      // Успешный вход
-    } else {
-      alert("Неверные учетные данные")
+    try {
+      await signIn(email, password)
+    } catch (err) {
+      console.error('Login error:', err)
+      setError("Неверные учетные данные")
     }
   }
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Здесь можно добавить логику регистрации
-    alert("Регистрация пока не реализована")
+    setError(null)
+    
+    const formData = new FormData(e.target as HTMLFormElement)
+    const email = formData.get("email") as string
+    const password = formData.get("password") as string
+    const fullName = formData.get("name") as string
+
+    try {
+      await signUp(email, password, fullName)
+      setIsLogin(true)
+    } catch (err) {
+      console.error('Registration error:', err)
+      setError("Ошибка при регистрации")
+    }
   }
 
   if (!isAuthenticated) {
@@ -43,11 +59,17 @@ export default function AccountPage() {
             <CardTitle className="text-center">{isLogin ? "Вход в систему" : "Создать аккаунт"}</CardTitle>
           </CardHeader>
           <CardContent>
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-md text-sm">
+                {error}
+              </div>
+            )}
+            
             <form onSubmit={isLogin ? handleLogin : handleRegister} className="space-y-4">
               {!isLogin && (
                 <div>
                   <Label htmlFor="name">Полное имя</Label>
-                  <Input id="name" required />
+                  <Input id="name" name="name" required />
                 </div>
               )}
               <div>
@@ -64,7 +86,14 @@ export default function AccountPage() {
             </form>
 
             <div className="mt-4 text-center">
-              <button onClick={() => setIsLogin(!isLogin)} className="text-blue-600 hover:text-blue-800 text-sm">
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsLogin(!isLogin)
+                  setError(null)
+                }} 
+                className="text-blue-600 hover:text-blue-800 text-sm"
+              >
                 {isLogin ? "Нет аккаунта? Зарегистрироваться" : "Уже есть аккаунт? Войти"}
               </button>
             </div>
@@ -86,7 +115,7 @@ export default function AccountPage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Мой аккаунт</h1>
-        <Button onClick={logout} variant="outline">
+        <Button onClick={signOut} variant="outline">
           <LogOut className="h-4 w-4 mr-2" />
           Выйти
         </Button>

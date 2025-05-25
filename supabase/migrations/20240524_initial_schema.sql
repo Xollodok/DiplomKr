@@ -18,7 +18,9 @@ CREATE TABLE products (
     image_url TEXT,
     category_id UUID REFERENCES categories(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    stock INTEGER NOT NULL DEFAULT 0
+    stock INTEGER NOT NULL DEFAULT 0,
+    brand TEXT,
+    size TEXT
 );
 
 -- Create users table (extends Supabase auth.users)
@@ -63,10 +65,31 @@ CREATE POLICY "Products are viewable by everyone" ON products
     FOR SELECT USING (true);
 
 CREATE POLICY "Products are insertable by admin" ON products
-    FOR INSERT WITH CHECK (auth.uid() IN (SELECT id FROM users WHERE role = 'admin'));
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM users
+            WHERE users.id = auth.uid()
+            AND users.role = 'admin'
+        )
+    );
 
 CREATE POLICY "Products are updatable by admin" ON products
-    FOR UPDATE USING (auth.uid() IN (SELECT id FROM users WHERE role = 'admin'));
+    FOR UPDATE USING (
+        EXISTS (
+            SELECT 1 FROM users
+            WHERE users.id = auth.uid()
+            AND users.role = 'admin'
+        )
+    );
+
+CREATE POLICY "Products are deletable by admin" ON products
+    FOR DELETE USING (
+        EXISTS (
+            SELECT 1 FROM users
+            WHERE users.id = auth.uid()
+            AND users.role = 'admin'
+        )
+    );
 
 -- Categories policies
 CREATE POLICY "Categories are viewable by everyone" ON categories
@@ -113,4 +136,14 @@ INSERT INTO categories (name, description) VALUES
     ('Краски', 'Различные виды красок для разных поверхностей'),
     ('Лаки', 'Защитные и декоративные лаки'),
     ('Грунтовки', 'Грунтовочные составы для подготовки поверхностей'),
-    ('Инструменты', 'Кисти, валики и другие инструменты для покраски'); 
+    ('Инструменты', 'Кисти, валики и другие инструменты для покраски');
+
+-- Insert admin user (замените 'your-admin-email@example.com' на ваш email)
+INSERT INTO auth.users (email, encrypted_password, email_confirmed_at, role)
+VALUES ('your-admin-email@example.com', crypt('your-password', gen_salt('bf')), now(), 'authenticated');
+
+-- Insert admin user profile
+INSERT INTO users (id, email, full_name, role)
+SELECT id, email, 'Администратор', 'admin'
+FROM auth.users
+WHERE email = 'your-admin-email@example.com'; 
